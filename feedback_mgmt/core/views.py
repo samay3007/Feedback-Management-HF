@@ -1,0 +1,144 @@
+from django.db import models
+from rest_framework import viewsets, filters, status, permissions
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
+
+from .models import User, Board, Feedback, Comment, Tag, BoardMembership
+from .serializers import (
+    UserSerializer, BoardSerializer, FeedbackSerializer, CommentSerializer, TagSerializer
+)
+from .permissions import IsAdmin, IsOwnerOrAdmin, IsBoardMemberOrPublic
+
+
+class BoardViewSet(viewsets.ModelViewSet):
+    """
+    Boards: list and retrieve accessible by all members or public.
+    Create, update, delete restricted to admins only.
+    """
+    queryset = Board.objects.all()
+    serializer_class = BoardSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['name', 'is_public']
+    search_fields = ['name', 'description']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'add_member']:
+            permission_classes = [IsAdmin]
+        else:
+            permission_classes = [permissions.IsAuthenticated, IsBoardMemberOrPublic]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Board.objects.filter(
+            models.Q(is_public=True) | 
+            models.Q(members=user)
+        ).distinct()
+
+    @action(detail=True, methods=['post'], url_path='add-member', permission_classes=[IsAdmin])
+    def add_member(self, request, pk=None):
+        board = self.get_object()
+        username = request.data.get('username')
+        if not username:
+            return Response({'detail': 'username required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user_to_add = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        BoardMembership.objects.get_or_create(user=user_to_add, board=board)
+        return Response({'detail': f'User {username} added to board.'})
+
+
+class FeedbackViewSet(viewsets.ModelViewSet):
+    serializer_class = FeedbackSerializer
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.OrderingFilter,
+        filters.SearchFilter,
+    ]
+    filterset_fields = ['status', 'feedback_type', 'board', 'tags__name']
+    search_fields = ['title', 'description']
+    ordering_fields = ['created_at', 'upvotes', 'title', 'status']
+    ordering = ['-upvotes']
+
+    def get_queryset(self):
+        user = self.request.user
+        return Feedback.objects.select_related('board', 'created_by') \
+            .prefetch_related('tags', 'upvotes') \
+            .filter(models.Q(board__is_public=True) | models.Q(board__members=user)).distinct()
+
+    def get_permissions(self):
+        if self.action in ['update', 'partial_update', 'destroy']:
+            permission_classes = [IsOwnerOrAdmin]
+        else:
+            permission_classes = [permissions.IsAuthenticated, IsBoardMemberOrPublic]
+        return [permission() for permission in permission_classes]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=True, methods=['post'], url_path='upvote', permission_classes=[permissions.IsAuthenticated])
+    def upvote(self, request, pk=None):
+        feedback = self.get_object()
+        user = request.user
+
+        if feedback.upvotes.filter(id=user.id).exists():
+            feedback.upvotes.remove(user)
+            return Response({'detail': 'Upvote removed.'})
+        else:
+            feedback.upvotes.add(user)
+            return Response({'detail': 'Upvoted successfully.'})
+
+    @action(detail=True, methods=['post'], url_path='move', permission_classes=[permissions.IsAuthenticated])
+    def move(self, request, pk=None):
+        feedback = self.get_object()
+        user = request.user
+
+        if user.role != 'admin':
+            return Response({'detail': 'Only admins can move feedbacks.'}, status=status.HTTP_403_FORBIDDEN)
+
+        new_status = request.data.get('status')
+        if new_status not in dict(Feedback.STATUS_CHOICES):
+            return Response({'detail': 'Invalid status.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        feedback.status = new_status
+        feedback.save()
+        return Response({'detail': f'Status changed to {new_status}', 'new_status': new_status})
+
+
+class CommentViewSet(viewsets.ModelViewSet):
+    """
+    Comments: list/retrieve allowed for board members or public.
+    Updates/deletes allowed for comment creator or admins.
+    """
+    queryset = Comment.objects.all().select_related('feedback', 'created_by')
+    serializer_class = CommentSerializer
+
+    def get_permissions(self):
+        if self.action in ['update', 'partial_update', 'destroy']:
+            permission_classes = [IsOwnerOrAdmin]
+        else:
+            permission_classes = [permissions.IsAuthenticated, IsBoardMemberOrPublic]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Comment.objects.filter(
+            models.Q(feedback__board__is_public=True) |
+            models.Q(feedback__board__members=user)
+        ).distinct()
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class TagViewSet(viewsets.ModelViewSet):
+    """
+    Tags: only admins can manage tags.
+    """
+    queryset = Tag.objects.all()
+    serializer_class = TagSerializer
+    permission_classes = [IsAdmin]
+
