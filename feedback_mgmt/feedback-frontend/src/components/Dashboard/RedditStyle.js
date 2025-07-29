@@ -2,16 +2,21 @@
 import React, { useEffect, useState } from 'react';
 import axios from '../../api/axiosInstance';
 import './Dashboard.css';
+import { addComment, fetchComments } from '../../api/comments';
 
 const RedditStyle = () => {
   const [feedbacks, setFeedbacks] = useState([]);
   const [boards, setBoards] = useState([]);
   const [selectedBoard, setSelectedBoard] = useState('');
+  const [loading, setLoading] = useState(false);
   const [newFeedback, setNewFeedback] = useState({
     title: '',
     description: '',
-    feedback_type: 'bug', // or 'feature', 'idea'
+    feedback_type: 'bug',
   });
+  const [comments, setComments] = useState({});
+  const [newComment, setNewComment] = useState({});
+  const [upvoting, setUpvoting] = useState(null);
 
   useEffect(() => {
     fetchBoards();
@@ -19,65 +24,94 @@ const RedditStyle = () => {
 
   useEffect(() => {
     if (selectedBoard) {
-      fetchFeedbacks(selectedBoard);
+      fetchFeedbacksAndComments(selectedBoard);
     }
   }, [selectedBoard]);
 
   const fetchBoards = async () => {
     try {
       const res = await axios.get('/boards/');
-      if (Array.isArray(res.data.results)) {
-        setBoards(res.data.results);
-        setSelectedBoard(res.data.results[0]?.id || '');
-      } else {
-        setBoards([]);
-      }
+      const boardList = res.data.results || [];
+      setBoards(boardList);
+      setSelectedBoard(boardList[0]?.id || '');
     } catch (err) {
       console.error('Error fetching boards:', err);
     }
   };
 
-  const fetchFeedbacks = async (boardId) => {
+  const fetchFeedbacksAndComments = async (boardId) => {
+    setLoading(true);
     try {
       const res = await axios.get(`/feedback/?board=${boardId}`);
-      if (Array.isArray(res.data.results)) {
-        setFeedbacks(res.data.results);
-      } else {
-        setFeedbacks([]);
-      }
+      const feedbackList = res.data.results || [];
+      setFeedbacks(feedbackList);
+
+      const commentPromises = feedbackList.map((fb) =>
+        fetchComments(fb.id).then((comments) => ({
+          feedbackId: fb.id,
+          comments,
+        }))
+      );
+
+      const commentsData = await Promise.all(commentPromises);
+      const allComments = {};
+      commentsData.forEach(({ feedbackId, comments }) => {
+        allComments[feedbackId] = comments.results || [];
+      });
+
+      setComments(allComments);
     } catch (err) {
-      console.error('Error fetching feedbacks:', err);
+      console.error('Error fetching feedbacks or comments:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleUpvote = async (id) => {
+    setUpvoting(id);
     try {
       await axios.post(`/feedback/${id}/upvote/`);
-      fetchFeedbacks(selectedBoard);
+      fetchFeedbacksAndComments(selectedBoard);
     } catch (err) {
       console.error('Error upvoting:', err);
+    } finally {
+      setUpvoting(null);
     }
   };
 
   const handleCreateFeedback = async () => {
-  try {
-    await axios.post('/feedback/', {
-      ...newFeedback,
-      board: selectedBoard,
-      tags: []  // 🔧 Fix: Add empty tags list explicitly
-    });
-    setNewFeedback({ title: '', description: '', feedback_type: 'bug' });
-    fetchFeedbacks(selectedBoard);
-  } catch (err) {
-    console.error('Error creating feedback:', err.response?.data || err);
-  }
-};
+    if (!newFeedback.title.trim() || !newFeedback.description.trim()) return;
 
+    try {
+      await axios.post('/feedback/', {
+        ...newFeedback,
+        board: selectedBoard,
+        tags: [],
+      });
+      setNewFeedback({ title: '', description: '', feedback_type: 'bug' });
+      fetchFeedbacksAndComments(selectedBoard);
+    } catch (err) {
+      console.error('Error creating feedback:', err.response?.data || err);
+    }
+  };
+
+  const handleAddComment = async (feedbackId) => {
+    const text = newComment[feedbackId]?.trim();
+    if (!text) return;
+
+    try {
+      await addComment(feedbackId, text);
+      setNewComment((prev) => ({ ...prev, [feedbackId]: '' }));
+      fetchFeedbacksAndComments(selectedBoard);
+    } catch (err) {
+      console.error('Error adding comment:', err.response?.data || err);
+    }
+  };
 
   return (
     <div className="dashboard-container">
       <div className="dashboard-header">
-        <h2 className="dashboard-title">Development</h2>
+        <h2 className="dashboard-title">Feedback Dashboard</h2>
         {boards.length > 0 ? (
           <select
             value={selectedBoard}
@@ -91,11 +125,11 @@ const RedditStyle = () => {
             ))}
           </select>
         ) : (
-          <p>No boards available.</p>
+          <p>Loading boards...</p>
         )}
       </div>
 
-      {/* Feedback creation form */}
+      {/* Feedback Form */}
       <div className="feedback-item">
         <h3>Create New Feedback</h3>
         <div className="form-group">
@@ -126,37 +160,58 @@ const RedditStyle = () => {
             <option value="idea">Idea</option>
           </select>
         </div>
-        <button
-          onClick={handleCreateFeedback}
-          className="btn-primary"
-        >
+        <button onClick={handleCreateFeedback} className="btn-primary">
           Submit Feedback
         </button>
       </div>
 
       <h3 className="dashboard-title" style={{ marginTop: '2rem' }}>Feedback Items</h3>
-      
-      {feedbacks.length === 0 ? (
+
+      {loading ? (
+        <p>Loading feedbacks...</p>
+      ) : feedbacks.length === 0 ? (
         <p>No feedbacks available for this board.</p>
       ) : (
         feedbacks.map((fb) => (
-          <div
-            key={fb.id}
-            className="feedback-item"
-          >
+          <div key={fb.id} className="feedback-item">
             <h3>{fb.title}</h3>
             <p>{fb.description}</p>
             <div className="feedback-meta">
               <div>
                 <span className="feedback-tag">{fb.feedback_type}</span>
-                <span>Board: {fb.board_name || fb.board}</span>
+                <span> | Board: {fb.board_name || fb.board}</span>
               </div>
               <button
                 onClick={() => handleUpvote(fb.id)}
                 className="upvote-button"
+                disabled={upvoting === fb.id}
               >
                 👍 {fb.upvote_count}
               </button>
+            </div>
+
+            {/* Comments Section */}
+            <div className="comments-section">
+              <h4>Comments</h4>
+              {(Array.isArray(comments[fb.id]) ? comments[fb.id] : []).map(c => (
+                <div key={c.id} className="comment">
+                  <strong>{c.created_by?.username || 'User'}:</strong> {c.content}
+                </div>
+              ))}
+              <div className="comment-form">
+                <input
+                  type="text"
+                  placeholder="Add a comment..."
+                  value={newComment[fb.id] || ''}
+                  onChange={(e) =>
+                    setNewComment((prev) => ({ ...prev, [fb.id]: e.target.value }))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddComment(fb.id);
+                  }}
+                />
+                <button onClick={() => handleAddComment(fb.id)}>Post</button>
+              </div>
             </div>
           </div>
         ))
