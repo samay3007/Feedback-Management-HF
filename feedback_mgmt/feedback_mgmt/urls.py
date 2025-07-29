@@ -16,18 +16,9 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from core.token_serializers import MyTokenObtainPairSerializer
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
-class MyTokenObtainPairView(TokenObtainPairView):
-    serializer_class = MyTokenObtainPairSerializer
-
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('core.urls')),
-    path('api/auth/token/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/', include('core.urls')),  # All API endpoints, including auth, in core.urls
 ]
+

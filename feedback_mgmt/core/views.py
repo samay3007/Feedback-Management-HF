@@ -108,12 +108,18 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         return Response({'detail': f'Status changed to {new_status}', 'new_status': new_status})
 
 
+from rest_framework import viewsets, permissions
+from django.db import models
+from .models import Comment
+from .serializers import CommentSerializer
+from .permissions import IsOwnerOrAdmin, IsBoardMemberOrPublic
+
+
 class CommentViewSet(viewsets.ModelViewSet):
     """
     Comments: list/retrieve allowed for board members or public.
     Updates/deletes allowed for comment creator or admins.
     """
-    queryset = Comment.objects.all().select_related('feedback', 'created_by')
     serializer_class = CommentSerializer
 
     def get_permissions(self):
@@ -125,13 +131,21 @@ class CommentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return Comment.objects.filter(
+        feedback_id = self.request.query_params.get('feedback')
+
+        queryset = Comment.objects.filter(
             models.Q(feedback__board__is_public=True) |
             models.Q(feedback__board__members=user)
-        ).distinct()
+        ).select_related('feedback', 'created_by')
+
+        if feedback_id:
+            queryset = queryset.filter(feedback_id=feedback_id)
+
+        return queryset.order_by('created_at')  # oldest to newest
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+
 
 
 class TagViewSet(viewsets.ModelViewSet):

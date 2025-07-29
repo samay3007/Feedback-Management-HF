@@ -27,7 +27,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'django_filters',
-    'corsheaders',  # ✅ CORS support added
+    'corsheaders',  
 
     # Local apps
     'core',

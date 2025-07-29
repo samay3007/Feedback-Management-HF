@@ -96,8 +96,6 @@ class CommentSerializer(serializers.ModelSerializer):
         model = Comment
         fields = ['id', 'feedback', 'created_by', 'content', 'created_at', 'updated_at']
 
-    def create(self, validated_data):
-        return Comment.objects.create(**validated_data, created_by=self.context['request'].user)
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
