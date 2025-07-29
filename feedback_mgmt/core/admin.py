@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.contrib import admin #tocloseissue2
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import User, Board, Feedback, Comment, Tag, BoardMembership
 
