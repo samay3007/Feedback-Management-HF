@@ -1,4 +1,5 @@
-// src/components/Dashboard/DashboardView.js //just to commit
+// src/components/Dashboard/DashboardView.js //toclosealltheprs
+
 import React, { useEffect, useState } from 'react';
 import axiosInstance from '../../api/axiosInstance';
 import { Bar, Pie, Line } from 'react-chartjs-2';

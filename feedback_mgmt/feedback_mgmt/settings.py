@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -79,10 +80,16 @@ WSGI_APPLICATION = 'feedback_mgmt.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('POSTGRES_DB', 'feedbackdb'),
+        'USER': os.environ.get('POSTGRES_USER', 'postgres'),
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'yourpassword'),
+        'HOST': os.environ.get('DB_HOST', 'db'),  # ✅ use 'db' not 'localhost'
+        'PORT': '5432',
     }
 }
+
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {
