@@ -9,40 +9,29 @@ const FeedbackTable = ({ selectedBoard }) => {
     const [loading, setLoading] = useState(false);
     const [pageCount, setPageCount] = useState(0);
     const [totalCount, setTotalCount] = useState(0);
-
-    // Server side state
+    const [tagsList, setTagsList] = useState([]);
     const [pageIndex, setPageIndex] = useState(0);
     const [pageSize, setPageSize] = useState(10);
     const [sortBy] = useState([]);
-    // Using filterValues for our custom filter UI
+
     const [filterValues, setFilterValues] = useState({
         status: '',
         feedback_type: '',
         board: selectedBoard || '',
         tags: ''
     });
-    
-    // We don't need to maintain a separate filters state for react-table
-    // since we're handling filtering through API calls
-    
-    // Update filterValues when selectedBoard changes
+
     useEffect(() => {
         if (selectedBoard) {
             setFilterValues(prev => ({ ...prev, board: selectedBoard }));
         }
     }, [selectedBoard]);
 
-    // Format date for display
     const formatDate = (dateString) => {
         const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric' 
-        });
+        return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     };
 
-    // Columns
     const columns = useMemo(() => [
         {
             Header: 'Title',
@@ -79,9 +68,11 @@ const FeedbackTable = ({ selectedBoard }) => {
             accessor: 'tags',
             Cell: ({ value }) => (
                 <div className="tags-list">
-                    {value.map(tag => (
-                        <span key={tag.id} className="tag">{tag.name}</span>
-                    ))}
+                    {Array.isArray(value) && value.length > 0
+                        ? value.map((tag) => (
+                            <span key={`tag-${tag.id || tag.name}`} className="tag">{tag.name}</span>
+                        ))
+                    : '—'}
                 </div>
             )
         },
@@ -112,8 +103,6 @@ const FeedbackTable = ({ selectedBoard }) => {
                 pageIndex,
                 pageSize,
                 sortBy,
-                // Don't pass our custom filterValues object to react-table
-                // It expects an array of filter objects
             }),
         },
         useFilters,
@@ -128,24 +117,14 @@ const FeedbackTable = ({ selectedBoard }) => {
             const s = sortBy[0];
             sort_param = (s.desc ? '-' : '') + s.id;
         }
-        // Build filter query params
-        let filterParams = '';
-        if (filterValues.status) {
-            filterParams += `&status=${filterValues.status}`;
-        }
-        if (filterValues.feedback_type) {
-            filterParams += `&feedback_type=${filterValues.feedback_type}`;
-        }
-        if (filterValues.board) {
-            filterParams += `&board=${filterValues.board}`;
-        }
-        if (filterValues.tags) {
-            filterParams += `&tags__name=${filterValues.tags}`;
-        }
 
-        axiosInstance.get(
-            `/feedback/?page=${pageIndex + 1}&page_size=${pageSize}&ordering=${sort_param}${filterParams}`
-        )
+        let filterParams = '';
+        if (filterValues.status) filterParams += `&status=${filterValues.status}`;
+        if (filterValues.feedback_type) filterParams += `&feedback_type=${filterValues.feedback_type}`;
+        if (filterValues.board) filterParams += `&board=${filterValues.board}`;
+        if (filterValues.tags) filterParams += `&tags=${filterValues.tags}`;
+
+        axiosInstance.get(`/feedback/?page=${pageIndex + 1}&page_size=${pageSize}&ordering=${sort_param}${filterParams}`)
             .then(res => {
                 setData(res.data.results);
                 setPageCount(Math.ceil(res.data.count / pageSize));
@@ -154,6 +133,23 @@ const FeedbackTable = ({ selectedBoard }) => {
             })
             .catch(_ => setLoading(false));
     }, [pageIndex, pageSize, sortBy, filterValues]);
+
+    useEffect(() => {
+        axiosInstance.get('/tags/')
+            .then(res => {
+                const results = Array.isArray(res.data?.results) ? res.data.results : res.data;
+                setTagsList(results);
+            })
+            .catch(err => {
+                console.error('Failed to load tags:', err);
+                setTagsList([]);
+            });
+    }, []);
+
+    const handleFilterChange = (key, value) => {
+        setFilterValues(prev => ({ ...prev, [key]: value }));
+        setPageIndex(0); // Reset to first page on filter change
+    };
 
     return (
         <div className="table-container">
@@ -167,7 +163,7 @@ const FeedbackTable = ({ selectedBoard }) => {
                     <select 
                         className="filter-select"
                         value={filterValues.status}
-                        onChange={e => setFilterValues(prev => ({ ...prev, status: e.target.value }))}
+                        onChange={e => handleFilterChange('status', e.target.value)}
                     >
                         <option value="">All Statuses</option>
                         <option value="open">Open</option>
@@ -181,7 +177,7 @@ const FeedbackTable = ({ selectedBoard }) => {
                     <select 
                         className="filter-select"
                         value={filterValues.feedback_type}
-                        onChange={e => setFilterValues(prev => ({ ...prev, feedback_type: e.target.value }))}
+                        onChange={e => handleFilterChange('feedback_type', e.target.value)}
                     >
                         <option value="">All Types</option>
                         <option value="feature">Feature Request</option>
@@ -189,16 +185,19 @@ const FeedbackTable = ({ selectedBoard }) => {
                         <option value="suggestion">Suggestion</option>
                     </select>
                 </div>
-                
+
                 <div className="filter-group">
                     <label className="filter-label">Tags</label>
-                    <input 
-                        type="text" 
+                    <select
                         className="filter-select"
-                        placeholder="Filter by tag"
-                        value={filterValues.tags || ''}
-                        onChange={e => setFilterValues(prev => ({ ...prev, tags: e.target.value }))} 
-                    />
+                        value={filterValues.tags}
+                        onChange={e => handleFilterChange('tags', e.target.value)}
+                    >
+                        <option value="">All Tags</option>
+                        {tagsList.map(tag => (
+                            <option key={tag.id} value={tag.id}>{tag.name}</option>
+                        ))}
+                    </select>
                 </div>
             </div>
 
@@ -213,11 +212,7 @@ const FeedbackTable = ({ selectedBoard }) => {
                                 >
                                     {column.render('Header')}
                                     <span className="sort-indicator">
-                                        {column.isSorted
-                                            ? column.isSortedDesc
-                                                ? '↓'
-                                                : '↑'
-                                            : ''}
+                                        {column.isSorted ? (column.isSortedDesc ? '↓' : '↑') : ''}
                                     </span>
                                 </th>
                             ))}
@@ -238,12 +233,9 @@ const FeedbackTable = ({ selectedBoard }) => {
                         page.map(row => {
                             prepareRow(row);
                             return (
-                                <tr {...row.getRowProps()} key={row.id}>
+                                <tr {...row.getRowProps()} key={row.original.id}>
                                     {row.cells.map(cell => (
-                                        <td
-                                            {...cell.getCellProps()}
-                                            key={cell.column.id}
-                                        >
+                                        <td {...cell.getCellProps()} key={cell.column.id}>
                                             {cell.render('Cell')}
                                         </td>
                                     ))}
@@ -274,7 +266,7 @@ const FeedbackTable = ({ selectedBoard }) => {
                         Next
                     </button>
                 </div>
-                
+
                 <div>
                     <select
                         className="page-size-select"
