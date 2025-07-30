@@ -11,7 +11,7 @@ const RedditStyle = () => {
   const [selectedTagFilter, setSelectedTagFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [newTag, setNewTag] = useState('');
-  const [selectedTags, setSelectedTags] = useState([]);
+  const [selectedTags, setSelectedTags] = useState([]); // array of tag IDs
   const [newFeedback, setNewFeedback] = useState({
     title: '',
     description: '',
@@ -44,15 +44,14 @@ const RedditStyle = () => {
   };
 
   const fetchTags = async () => {
-  try {
-    const res = await axios.get('/tags/');
-    setTags(Array.isArray(res.data) ? res.data : []); // safest
-  } catch (err) {
-    console.error('Error fetching tags:', err);
-    setTags([]); // fallback
-  }
-};
-
+    try {
+      const res = await axios.get('/tags/');
+      setTags(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Error fetching tags:', err);
+      setTags([]);
+    }
+  };
 
   const fetchFeedbacksAndComments = async (boardId, tagId = '') => {
     setLoading(true);
@@ -103,7 +102,7 @@ const RedditStyle = () => {
       await axios.post('/feedback/', {
         ...newFeedback,
         board: selectedBoard,
-        tags: selectedTags.map((tag) => ({ name: tag })),
+        tag_ids: selectedTags, // ✅ THIS IS THE FIX
       });
       setNewFeedback({ title: '', description: '', feedback_type: 'bug' });
       setSelectedTags([]);
@@ -131,10 +130,10 @@ const RedditStyle = () => {
 
     try {
       const res = await axios.post('/tags/', { name: newTag });
-      const newTagName = res.data.name;
-      setTags([...tags, res.data]);
-      if (!selectedTags.includes(newTagName)) {
-        setSelectedTags([...selectedTags, newTagName]);
+      const newTagData = res.data;
+      setTags([...tags, newTagData]);
+      if (!selectedTags.includes(newTagData.id)) {
+        setSelectedTags([...selectedTags, newTagData.id]);
       }
       setNewTag('');
     } catch (err) {
@@ -142,11 +141,11 @@ const RedditStyle = () => {
     }
   };
 
-  const toggleTagSelection = (tagName) => {
-    if (selectedTags.includes(tagName)) {
-      setSelectedTags(selectedTags.filter((t) => t !== tagName));
+  const toggleTagSelection = (tagId) => {
+    if (selectedTags.includes(tagId)) {
+      setSelectedTags(selectedTags.filter((id) => id !== tagId));
     } else {
-      setSelectedTags([...selectedTags, tagName]);
+      setSelectedTags([...selectedTags, tagId]);
     }
   };
 
@@ -213,9 +212,9 @@ const RedditStyle = () => {
               <label key={tag.id} className="tag-option">
                 <input
                   type="checkbox"
-                  value={tag.name}
-                  checked={selectedTags.includes(tag.name)}
-                  onChange={() => toggleTagSelection(tag.name)}
+                  value={tag.id}
+                  checked={selectedTags.includes(tag.id)}
+                  onChange={() => toggleTagSelection(tag.id)}
                 />
                 {tag.name}
               </label>
@@ -253,6 +252,7 @@ const RedditStyle = () => {
               <div>
                 <span className="feedback-tag">{fb.feedback_type}</span>
                 <span> | Board: {fb.board_name || fb.board}</span>
+                <span> | <strong>By:</strong> {fb.created_by?.username || 'Unknown'}</span>
                 {fb.tags?.length > 0 && (
                   <div className="tag-container">
                     {fb.tags.map((tag) => (
