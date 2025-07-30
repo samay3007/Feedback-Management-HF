@@ -1,15 +1,14 @@
-// src/components/Dashboard/DashboardView.js //toclosealltheprs
+// src/components/Dashboard/DashboardView.js
 
 import React, { useEffect, useState } from 'react';
 import axiosInstance from '../../api/axiosInstance';
-import { Bar, Pie, Line } from 'react-chartjs-2';
+import { Bar, Line } from 'react-chartjs-2';
 import './Dashboard.css';
 import {
     Chart as ChartJS,
     CategoryScale,
     LinearScale,
     BarElement,
-    ArcElement,
     Title,
     Tooltip,
     Legend,
@@ -21,7 +20,6 @@ ChartJS.register(
     CategoryScale,
     LinearScale,
     BarElement,
-    ArcElement,
     Title,
     Tooltip,
     Legend,
@@ -39,7 +37,6 @@ const DashboardView = () => {
         completed: 0,
         trending: [],
         topVoted: null,
-        tagsDistribution: {},
         statusDistribution: {},
     });
 
@@ -89,13 +86,6 @@ const DashboardView = () => {
                 });
                 const trending = Object.entries(dateCounts).map(([date, count]) => ({ date, count }));
 
-                const tagCountMap = {};
-                feedbacks.forEach(fb => {
-                    fb.tags.forEach(tag => {
-                        tagCountMap[tag.name] = (tagCountMap[tag.name] || 0) + 1;
-                    });
-                });
-
                 const statusCountMap = { open, in_progress, completed };
 
                 setSummary({
@@ -105,7 +95,6 @@ const DashboardView = () => {
                     completed,
                     trending,
                     topVoted,
-                    tagsDistribution: tagCountMap,
                     statusDistribution: statusCountMap,
                 });
             } catch (err) {
@@ -127,15 +116,6 @@ const DashboardView = () => {
                 tension: 0.1
             }
         ]
-    };
-
-    const tagsData = {
-        labels: Object.keys(summary.tagsDistribution),
-        datasets: [{
-            label: '# Feedback Items',
-            data: Object.values(summary.tagsDistribution),
-            backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'],
-        }],
     };
 
     const statusData = {
@@ -212,10 +192,6 @@ const DashboardView = () => {
                 <div className="chart-card">
                     <h3>Submission Trends (Last 30 days)</h3>
                     <Line data={trendingData} />
-                </div>
-                <div className="chart-card">
-                    <h3>Feedback Tags Distribution</h3>
-                    <Pie data={tagsData} />
                 </div>
                 <div className="chart-card">
                     <h3>Status Distribution</h3>
