@@ -1,4 +1,3 @@
-// src/components/Dashboard/RedditStyle.js
 import React, { useEffect, useState } from 'react';
 import axios from '../../api/axiosInstance';
 import './Dashboard.css';
@@ -7,8 +6,12 @@ import { addComment, fetchComments } from '../../api/comments';
 const RedditStyle = () => {
   const [feedbacks, setFeedbacks] = useState([]);
   const [boards, setBoards] = useState([]);
+  const [tags, setTags] = useState([]);
   const [selectedBoard, setSelectedBoard] = useState('');
+  const [selectedTagFilter, setSelectedTagFilter] = useState('');
   const [loading, setLoading] = useState(false);
+  const [newTag, setNewTag] = useState('');
+  const [selectedTags, setSelectedTags] = useState([]);
   const [newFeedback, setNewFeedback] = useState({
     title: '',
     description: '',
@@ -20,13 +23,14 @@ const RedditStyle = () => {
 
   useEffect(() => {
     fetchBoards();
+    fetchTags();
   }, []);
 
   useEffect(() => {
     if (selectedBoard) {
-      fetchFeedbacksAndComments(selectedBoard);
+      fetchFeedbacksAndComments(selectedBoard, selectedTagFilter);
     }
-  }, [selectedBoard]);
+  }, [selectedBoard, selectedTagFilter]);
 
   const fetchBoards = async () => {
     try {
@@ -39,10 +43,23 @@ const RedditStyle = () => {
     }
   };
 
-  const fetchFeedbacksAndComments = async (boardId) => {
+  const fetchTags = async () => {
+  try {
+    const res = await axios.get('/tags/');
+    setTags(Array.isArray(res.data) ? res.data : []); // safest
+  } catch (err) {
+    console.error('Error fetching tags:', err);
+    setTags([]); // fallback
+  }
+};
+
+
+  const fetchFeedbacksAndComments = async (boardId, tagId = '') => {
     setLoading(true);
     try {
-      const res = await axios.get(`/feedback/?board=${boardId}`);
+      let url = `/feedback/?board=${boardId}`;
+      if (tagId) url += `&tag=${tagId}`;
+      const res = await axios.get(url);
       const feedbackList = res.data.results || [];
       setFeedbacks(feedbackList);
 
@@ -71,7 +88,7 @@ const RedditStyle = () => {
     setUpvoting(id);
     try {
       await axios.post(`/feedback/${id}/upvote/`);
-      fetchFeedbacksAndComments(selectedBoard);
+      fetchFeedbacksAndComments(selectedBoard, selectedTagFilter);
     } catch (err) {
       console.error('Error upvoting:', err);
     } finally {
@@ -86,10 +103,11 @@ const RedditStyle = () => {
       await axios.post('/feedback/', {
         ...newFeedback,
         board: selectedBoard,
-        tags: [],
+        tags: selectedTags.map((tag) => ({ name: tag })),
       });
       setNewFeedback({ title: '', description: '', feedback_type: 'bug' });
-      fetchFeedbacksAndComments(selectedBoard);
+      setSelectedTags([]);
+      fetchFeedbacksAndComments(selectedBoard, selectedTagFilter);
     } catch (err) {
       console.error('Error creating feedback:', err.response?.data || err);
     }
@@ -102,9 +120,33 @@ const RedditStyle = () => {
     try {
       await addComment(feedbackId, text);
       setNewComment((prev) => ({ ...prev, [feedbackId]: '' }));
-      fetchFeedbacksAndComments(selectedBoard);
+      fetchFeedbacksAndComments(selectedBoard, selectedTagFilter);
     } catch (err) {
       console.error('Error adding comment:', err.response?.data || err);
+    }
+  };
+
+  const handleAddTag = async () => {
+    if (!newTag.trim()) return;
+
+    try {
+      const res = await axios.post('/tags/', { name: newTag });
+      const newTagName = res.data.name;
+      setTags([...tags, res.data]);
+      if (!selectedTags.includes(newTagName)) {
+        setSelectedTags([...selectedTags, newTagName]);
+      }
+      setNewTag('');
+    } catch (err) {
+      console.error('Error creating tag:', err.response?.data || err);
+    }
+  };
+
+  const toggleTagSelection = (tagName) => {
+    if (selectedTags.includes(tagName)) {
+      setSelectedTags(selectedTags.filter((t) => t !== tagName));
+    } else {
+      setSelectedTags([...selectedTags, tagName]);
     }
   };
 
@@ -112,7 +154,7 @@ const RedditStyle = () => {
     <div className="dashboard-container">
       <div className="dashboard-header">
         <h2 className="dashboard-title">Feedback Dashboard</h2>
-        {boards.length > 0 ? (
+        <div style={{ display: 'flex', gap: '1rem' }}>
           <select
             value={selectedBoard}
             onChange={(e) => setSelectedBoard(e.target.value)}
@@ -120,46 +162,77 @@ const RedditStyle = () => {
           >
             {boards.map((board) => (
               <option key={board.id} value={board.id}>
-                Switch Board: {board.name}
+                {board.name}
               </option>
             ))}
           </select>
-        ) : (
-          <p>Loading boards...</p>
-        )}
+
+          <select
+            value={selectedTagFilter}
+            onChange={(e) => setSelectedTagFilter(e.target.value)}
+            className="board-selector"
+          >
+            <option value="">All Tags</option>
+            {tags.map((tag) => (
+              <option key={tag.id} value={tag.id}>{tag.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Feedback Form */}
       <div className="feedback-item">
         <h3>Create New Feedback</h3>
+        <input
+          type="text"
+          placeholder="Title"
+          className="form-control"
+          value={newFeedback.title}
+          onChange={(e) => setNewFeedback({ ...newFeedback, title: e.target.value })}
+        />
+        <textarea
+          placeholder="Description"
+          className="form-control"
+          value={newFeedback.description}
+          onChange={(e) => setNewFeedback({ ...newFeedback, description: e.target.value })}
+        />
+        <select
+          className="form-control"
+          value={newFeedback.feedback_type}
+          onChange={(e) => setNewFeedback({ ...newFeedback, feedback_type: e.target.value })}
+        >
+          <option value="bug">Bug</option>
+          <option value="feature">Feature</option>
+          <option value="suggestion">Suggestion</option>
+        </select>
+
         <div className="form-group">
-          <input
-            type="text"
-            placeholder="Title"
-            className="form-control"
-            value={newFeedback.title}
-            onChange={(e) => setNewFeedback({ ...newFeedback, title: e.target.value })}
-          />
+          <label>Tags:</label>
+          <div className="tag-dropdown">
+            {tags.map((tag) => (
+              <label key={tag.id} className="tag-option">
+                <input
+                  type="checkbox"
+                  value={tag.name}
+                  checked={selectedTags.includes(tag.name)}
+                  onChange={() => toggleTagSelection(tag.name)}
+                />
+                {tag.name}
+              </label>
+            ))}
+          </div>
+          <div className="add-tag-form">
+            <input
+              type="text"
+              placeholder="New tag"
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              className="form-control"
+            />
+            <button onClick={handleAddTag} className="btn-small">Add Tag</button>
+          </div>
         </div>
-        <div className="form-group">
-          <textarea
-            placeholder="Description"
-            className="form-control"
-            value={newFeedback.description}
-            onChange={(e) => setNewFeedback({ ...newFeedback, description: e.target.value })}
-          />
-        </div>
-        <div className="form-group">
-          <select
-            className="form-control"
-            value={newFeedback.feedback_type}
-            onChange={(e) => setNewFeedback({ ...newFeedback, feedback_type: e.target.value })}
-          >
-            <option value="bug">Bug</option>
-            <option value="feature">Feature</option>
-            <option value="idea">Idea</option>
-          </select>
-        </div>
+
         <button onClick={handleCreateFeedback} className="btn-primary">
           Submit Feedback
         </button>
@@ -180,6 +253,13 @@ const RedditStyle = () => {
               <div>
                 <span className="feedback-tag">{fb.feedback_type}</span>
                 <span> | Board: {fb.board_name || fb.board}</span>
+                {fb.tags?.length > 0 && (
+                  <div className="tag-container">
+                    {fb.tags.map((tag) => (
+                      <span key={tag.id} className="feedback-tag-label">#{tag.name}</span>
+                    ))}
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => handleUpvote(fb.id)}
@@ -193,7 +273,7 @@ const RedditStyle = () => {
             {/* Comments Section */}
             <div className="comments-section">
               <h4>Comments</h4>
-              {(Array.isArray(comments[fb.id]) ? comments[fb.id] : []).map(c => (
+              {(comments[fb.id] || []).map(c => (
                 <div key={c.id} className="comment">
                   <strong>{c.created_by?.username || 'User'}:</strong> {c.content}
                 </div>

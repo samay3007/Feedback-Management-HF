@@ -51,14 +51,29 @@ class BoardViewSet(viewsets.ModelViewSet):
         return Response({'detail': f'User {username} added to board.'})
 
 
+from rest_framework import viewsets, permissions, status, filters
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
+from django.db import models
+
+from .models import Feedback
+from .serializers import FeedbackSerializer
+from .permissions import IsBoardMemberOrPublic, IsOwnerOrAdmin
+
+
 class FeedbackViewSet(viewsets.ModelViewSet):
     serializer_class = FeedbackSerializer
+
+    # Enable filtering, searching, ordering
     filter_backends = [
         DjangoFilterBackend,
         filters.OrderingFilter,
         filters.SearchFilter,
     ]
-    filterset_fields = ['status', 'feedback_type', 'board', 'tags__name']
+
+    # Filter by tag ID (via ?tags=1) and tag name (via ?tags__name=bug)
+    filterset_fields = ['status', 'feedback_type', 'board', 'tags', 'tags__name']
     search_fields = ['title', 'description']
     ordering_fields = ['created_at', 'upvotes', 'title', 'status']
     ordering = ['-upvotes']
@@ -67,7 +82,10 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         user = self.request.user
         return Feedback.objects.select_related('board', 'created_by') \
             .prefetch_related('tags', 'upvotes') \
-            .filter(models.Q(board__is_public=True) | models.Q(board__members=user)).distinct()
+            .filter(
+                models.Q(board__is_public=True) |
+                models.Q(board__members=user)
+            ).distinct()
 
     def get_permissions(self):
         if self.action in ['update', 'partial_update', 'destroy']:
@@ -77,7 +95,7 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        serializer.save()
 
     @action(detail=True, methods=['post'], url_path='upvote', permission_classes=[permissions.IsAuthenticated])
     def upvote(self, request, pk=None):
@@ -106,6 +124,7 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         feedback.status = new_status
         feedback.save()
         return Response({'detail': f'Status changed to {new_status}', 'new_status': new_status})
+
 
 
 from rest_framework import viewsets, permissions
@@ -150,9 +169,16 @@ class CommentViewSet(viewsets.ModelViewSet):
 
 class TagViewSet(viewsets.ModelViewSet):
     """
-    Tags: only admins can manage tags.
+    Tags: any authenticated user can create tags.
+    Only admins can update or delete tags.
     """
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
-    permission_classes = [IsAdmin]
+
+    def get_permissions(self):
+        if self.action in ['update', 'partial_update', 'destroy']:
+            permission_classes = [IsAdmin]
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
 
