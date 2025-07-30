@@ -93,6 +93,8 @@ class FeedbackSerializer(serializers.ModelSerializer):
         return instance
 
 class CommentSerializer(serializers.ModelSerializer):
+    created_by = UserSerializer(read_only=True)
+
     class Meta:
         model = Comment
         fields = ['id', 'content', 'feedback', 'created_by', 'created_at']

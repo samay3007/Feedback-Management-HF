@@ -275,9 +275,10 @@ const RedditStyle = () => {
               <h4>Comments</h4>
               {(comments[fb.id] || []).map(c => (
                 <div key={c.id} className="comment">
-                  <strong>{c.created_by?.username || 'User'}:</strong> {c.content}
+                  <strong>{c.created_by?.username || c.created_by?.email || 'User'}:</strong> {c.content}
                 </div>
               ))}
+
               <div className="comment-form">
                 <input
                   type="text"
