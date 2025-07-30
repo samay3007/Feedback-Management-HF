@@ -54,26 +54,32 @@ class BoardViewSet(viewsets.ModelViewSet):
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django_filters.rest_framework import DjangoFilterBackend
-from django.db import models
-
+from django_filters.rest_framework import DjangoFilterBackend, FilterSet, CharFilter
 from .models import Feedback
 from .serializers import FeedbackSerializer
 from .permissions import IsBoardMemberOrPublic, IsOwnerOrAdmin
 
 
+# Custom FilterSet to enable tag_name filtering
+class FeedbackFilter(FilterSet):
+    tag_name = CharFilter(field_name='tags__name', lookup_expr='icontains')
+
+    class Meta:
+        model = Feedback
+        fields = ['status', 'feedback_type', 'board', 'tags', 'tag_name']
+
+
 class FeedbackViewSet(viewsets.ModelViewSet):
     serializer_class = FeedbackSerializer
+    queryset = Feedback.objects.all()
 
-    # Enable filtering, searching, ordering
+    # Filtering, searching, ordering
     filter_backends = [
         DjangoFilterBackend,
         filters.OrderingFilter,
         filters.SearchFilter,
     ]
-
-    # Filter by tag ID (via ?tags=1) and tag name (via ?tags__name=bug)
-    filterset_fields = ['status', 'feedback_type', 'board', 'tags', 'tags__name']
+    filterset_class = FeedbackFilter  # ✅ Use custom filter
     search_fields = ['title', 'description']
     ordering_fields = ['created_at', 'upvotes', 'title', 'status']
     ordering = ['-upvotes']
@@ -124,6 +130,7 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         feedback.status = new_status
         feedback.save()
         return Response({'detail': f'Status changed to {new_status}', 'new_status': new_status})
+
 
 
 

@@ -20,7 +20,8 @@ class BoardMembershipAdmin(admin.ModelAdmin):
 class FeedbackAdmin(admin.ModelAdmin):
     list_display = ('title', 'board', 'status', 'created_by', 'created_at')
     list_filter = ('status', 'feedback_type', 'board')
-
+    search_fields = ('title', 'description')
+    filter_horizontal = ('tags',) 
 @admin.register(Comment)
 class CommentAdmin(admin.ModelAdmin):
     list_display = ('feedback', 'created_by', 'created_at')
@@ -28,3 +29,4 @@ class CommentAdmin(admin.ModelAdmin):
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):
     list_display = ('name',)
+    search_fields = ('name',)

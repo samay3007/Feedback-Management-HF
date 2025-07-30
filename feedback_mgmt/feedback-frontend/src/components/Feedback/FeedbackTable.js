@@ -70,7 +70,7 @@ const FeedbackTable = ({ selectedBoard }) => {
                 <div className="tags-list">
                     {Array.isArray(value) && value.length > 0
                         ? value.map((tag) => (
-                            <span key={`tag-${tag.id || tag.name}`} className="tag">{tag.name}</span>
+                            <span key={`tag-${tag.id ?? tag.name ?? Math.random()}`} className="tag">{tag.name}</span>
                         ))
                     : '—'}
                 </div>
@@ -233,7 +233,7 @@ const FeedbackTable = ({ selectedBoard }) => {
                         page.map(row => {
                             prepareRow(row);
                             return (
-                                <tr {...row.getRowProps()} key={row.original.id}>
+                                <tr {...row.getRowProps()} key={row.id}>
                                     {row.cells.map(cell => (
                                         <td {...cell.getCellProps()} key={cell.column.id}>
                                             {cell.render('Cell')}
