@@ -1,3 +1,5 @@
+#implemented role based user models
+
 from rest_framework import permissions
 from .models import Board, BoardMembership
 
