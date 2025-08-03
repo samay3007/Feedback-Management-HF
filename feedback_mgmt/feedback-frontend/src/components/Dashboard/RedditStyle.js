@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from '../../api/axiosInstance';
 import './Dashboard.css';
 import { addComment, fetchComments } from '../../api/comments';
+import axiosInstance from '../../api/axiosInstance';
 
 const RedditStyle = () => {
   const [feedbacks, setFeedbacks] = useState([]);
@@ -11,7 +12,7 @@ const RedditStyle = () => {
   const [selectedTagFilter, setSelectedTagFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [newTag, setNewTag] = useState('');
-  const [selectedTags, setSelectedTags] = useState([]); // array of tag IDs
+  const [selectedTags, setSelectedTags] = useState([]);
   const [newFeedback, setNewFeedback] = useState({
     title: '',
     description: '',
@@ -45,11 +46,11 @@ const RedditStyle = () => {
 
   const fetchTags = async () => {
     try {
-      const res = await axios.get('/tags/');
-      setTags(Array.isArray(res.data) ? res.data : []);
+      const res = await axiosInstance.get('/tags/');
+      const tagList = res.data.results || res.data;
+      setTags(tagList);
     } catch (err) {
-      console.error('Error fetching tags:', err);
-      setTags([]);
+      console.error('Failed to fetch tags:', err.response?.data || err);
     }
   };
 
@@ -102,8 +103,9 @@ const RedditStyle = () => {
       await axios.post('/feedback/', {
         ...newFeedback,
         board: selectedBoard,
-        tag_ids: selectedTags, // ✅ THIS IS THE FIX
+        tag_ids: selectedTags, // send tag IDs
       });
+
       setNewFeedback({ title: '', description: '', feedback_type: 'bug' });
       setSelectedTags([]);
       fetchFeedbacksAndComments(selectedBoard, selectedTagFilter);
@@ -128,24 +130,45 @@ const RedditStyle = () => {
   const handleAddTag = async () => {
     if (!newTag.trim()) return;
 
-    try {
-      const res = await axios.post('/tags/', { name: newTag });
-      const newTagData = res.data;
-      setTags([...tags, newTagData]);
-      if (!selectedTags.includes(newTagData.id)) {
-        setSelectedTags([...selectedTags, newTagData.id]);
+    const tagName = newTag.trim();
+
+    // Check if tag already exists (case-insensitive)
+    const existing = tags.find(tag => tag.name.toLowerCase() === tagName.toLowerCase());
+    if (existing) {
+      if (!selectedTags.includes(existing.id)) {
+        setSelectedTags(prev => [...prev, existing.id]);
       }
       setNewTag('');
-    } catch (err) {
-      console.error('Error creating tag:', err.response?.data || err);
+      return;
     }
-  };
 
-  const toggleTagSelection = (tagId) => {
-    if (selectedTags.includes(tagId)) {
-      setSelectedTags(selectedTags.filter((id) => id !== tagId));
-    } else {
-      setSelectedTags([...selectedTags, tagId]);
+    try {
+      const res = await axiosInstance.post('/tags/', { name: tagName });
+      const newTagData = res.data;
+      setTags(prev => [...prev, newTagData]);
+
+      if (!selectedTags.includes(newTagData.id)) {
+        setSelectedTags(prev => [...prev, newTagData.id]);
+      }
+
+      setNewTag('');
+    } catch (err) {
+      if (err.response?.data?.name?.[0]?.includes('already exists')) {
+        try {
+          const res = await axiosInstance.get('/tags/');
+          const tagList = res.data.results || res.data;
+          const existingAgain = tagList.find(tag => tag.name.toLowerCase() === tagName.toLowerCase());
+
+          if (existingAgain && !selectedTags.includes(existingAgain.id)) {
+            setSelectedTags(prev => [...prev, existingAgain.id]);
+          }
+          setTags(tagList);
+        } catch (fetchErr) {
+          console.error('Error fetching tags after duplicate creation:', fetchErr);
+        }
+      } else {
+        console.error('Error creating tag:', err.response?.data || err);
+      }
     }
   };
 
@@ -179,7 +202,6 @@ const RedditStyle = () => {
         </div>
       </div>
 
-      {/* Feedback Form */}
       <div className="feedback-item">
         <h3>Create New Feedback</h3>
         <input
@@ -207,20 +229,24 @@ const RedditStyle = () => {
 
         <div className="form-group">
           <label>Tags:</label>
-          <div className="tag-dropdown">
+          <select
+            multiple
+            className="form-control"
+            value={selectedTags}
+            onChange={(e) =>
+              setSelectedTags(
+                Array.from(e.target.selectedOptions, (opt) => parseInt(opt.value))
+              )
+            }
+          >
             {tags.map((tag) => (
-              <label key={tag.id} className="tag-option">
-                <input
-                  type="checkbox"
-                  value={tag.id}
-                  checked={selectedTags.includes(tag.id)}
-                  onChange={() => toggleTagSelection(tag.id)}
-                />
+              <option key={tag.id} value={tag.id}>
                 {tag.name}
-              </label>
+              </option>
             ))}
-          </div>
-          <div className="add-tag-form">
+          </select>
+
+          <div className="add-tag-form" style={{ marginTop: '0.5rem' }}>
             <input
               type="text"
               placeholder="New tag"
@@ -255,9 +281,14 @@ const RedditStyle = () => {
                 <span> | <strong>By:</strong> {fb.created_by?.username || 'Unknown'}</span>
                 {fb.tags?.length > 0 && (
                   <div className="tag-container">
-                    {fb.tags.map((tag) => (
-                      <span key={tag.id} className="feedback-tag-label">#{tag.name}</span>
-                    ))}
+                    {fb.tags.map((tag) => {
+                      const tagName = typeof tag === 'object' ? tag.name : tags.find(t => t.id === tag)?.name;
+                      return (
+                        <span key={typeof tag === 'object' ? tag.id : tag} className="feedback-tag-label">
+                          #{tagName || 'Unknown'}
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -270,7 +301,6 @@ const RedditStyle = () => {
               </button>
             </div>
 
-            {/* Comments Section */}
             <div className="comments-section">
               <h4>Comments</h4>
               {(comments[fb.id] || []).map(c => (
@@ -278,7 +308,6 @@ const RedditStyle = () => {
                   <strong>{c.created_by?.username || c.created_by?.email || 'User'}:</strong> {c.content}
                 </div>
               ))}
-
               <div className="comment-form">
                 <input
                   type="text"

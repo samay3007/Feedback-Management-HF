@@ -1,7 +1,6 @@
-#fixupvotebutton
 from rest_framework import serializers
-from .models import User, Board, Feedback, Comment, Tag, BoardMembership
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from .models import User, Board, Feedback, Comment, Tag, BoardMembership
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -9,7 +8,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'role', 'password']  # ✅ include password
+        fields = ['id', 'username', 'email', 'role', 'password']
 
     def create(self, validated_data):
         user = User.objects.create_user(
@@ -19,7 +18,6 @@ class UserSerializer(serializers.ModelSerializer):
             role=validated_data.get('role', 'contributor'),
         )
         return user
-
 
 
 class TagSerializer(serializers.ModelSerializer):
@@ -42,25 +40,25 @@ class BoardSerializer(serializers.ModelSerializer):
         return board
 
 
-# serializers.py
-
-from rest_framework import serializers
-from .models import Feedback, Tag, Board
-from .serializers import UserSerializer, TagSerializer
-
 class FeedbackSerializer(serializers.ModelSerializer):
     created_by = UserSerializer(read_only=True)
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
     upvote_count = serializers.SerializerMethodField()
 
-    # Read-only serialized tag data
     tags = TagSerializer(many=True, read_only=True)
 
-    # Write-only fields for creating or assigning tags
     tag_names = serializers.ListField(
-        child=serializers.CharField(), write_only=True, required=False
+        child=serializers.CharField(),
+        write_only=True,
+        required=False,
+        help_text="List of new tag names to create or reuse"
     )
     tag_ids = serializers.PrimaryKeyRelatedField(
-        queryset=Tag.objects.all(), many=True, write_only=True, required=False
+        queryset=Tag.objects.all(),
+        many=True,
+        write_only=True,
+        required=False,
+        help_text="List of existing tag IDs to link"
     )
 
     board = serializers.PrimaryKeyRelatedField(queryset=Board.objects.all())
@@ -69,39 +67,45 @@ class FeedbackSerializer(serializers.ModelSerializer):
         model = Feedback
         fields = [
             'id', 'title', 'description', 'status', 'feedback_type',
-            'created_at', 'board', 'created_by', 'upvote_count',
-            'tags', 'tag_names', 'tag_ids'
+            'created_at', 'created_by', 'created_by_username',
+            'board', 'tags', 'tag_ids', 'tag_names', 'upvote_count'
         ]
 
     def get_upvote_count(self, obj):
         return obj.upvotes.count()
 
     def _process_tags(self, instance, tag_names=None, tag_ids=None):
-        all_tags = []
-
-        if tag_ids:
-            all_tags.extend(tag_ids)
+        all_tags = list(tag_ids) if tag_ids else []
 
         if tag_names:
             for name in tag_names:
-                tag, _ = Tag.objects.get_or_create(name=name.strip())
-                all_tags.append(tag)
+                clean_name = name.strip()
+                if clean_name:
+                    tag, _ = Tag.objects.get_or_create(
+                        name__iexact=clean_name,
+                        defaults={'name': clean_name}
+                    )
+                    if tag not in all_tags:
+                        all_tags.append(tag)
 
         instance.tags.set(all_tags)
 
     def create(self, validated_data):
         tag_names = validated_data.pop('tag_names', [])
-        tag_ids = validated_data.pop('tag_ids', [])  # fixed: was 'tags' before
+        tag_ids = validated_data.pop('tag_ids', [])
+
+        # Ensure created_by doesn't sneak in and cause double pass
+        validated_data.pop('created_by', None)
+
         user = self.context['request'].user
-
         feedback = Feedback.objects.create(created_by=user, **validated_data)
-        self._process_tags(feedback, tag_names, tag_ids)
 
+        self._process_tags(feedback, tag_names, tag_ids)
         return feedback
 
     def update(self, instance, validated_data):
         tag_names = validated_data.pop('tag_names', None)
-        tag_ids = validated_data.pop('tag_ids', None)  # fixed: was 'tags' before
+        tag_ids = validated_data.pop('tag_ids', None)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -111,7 +115,6 @@ class FeedbackSerializer(serializers.ModelSerializer):
             self._process_tags(instance, tag_names or [], tag_ids or [])
 
         return instance
-
 
 
 class CommentSerializer(serializers.ModelSerializer):
@@ -127,8 +130,6 @@ class CommentSerializer(serializers.ModelSerializer):
         if request and hasattr(request, 'user'):
             validated_data['created_by'] = request.user
         return super().create(validated_data)
-
-
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
