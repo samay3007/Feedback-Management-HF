@@ -9,6 +9,10 @@ from .serializers import (
     UserSerializer, BoardSerializer, FeedbackSerializer, CommentSerializer, TagSerializer
 )
 from .permissions import IsAdmin, IsOwnerOrAdmin, IsBoardMemberOrPublic
+from rest_framework import viewsets, permissions
+from .models import Tag
+from .serializers import TagSerializer
+from .permissions import IsAdmin
 
 
 class BoardViewSet(viewsets.ModelViewSet):
@@ -101,7 +105,8 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
 
     def perform_create(self, serializer):
-        serializer.save()
+        serializer.save(created_by=self.request.user)
+
 
     @action(detail=True, methods=['post'], url_path='upvote', permission_classes=[permissions.IsAuthenticated])
     def upvote(self, request, pk=None):
@@ -172,20 +177,22 @@ class CommentViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
-
-
 class TagViewSet(viewsets.ModelViewSet):
     """
-    Tags: any authenticated user can create tags.
-    Only admins can update or delete tags.
+    Tag API:
+    - Anyone (even unauthenticated) can list and retrieve tags.
+    - Authenticated users can create new tags.
+    - Only admins can update or delete tags.
     """
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
 
     def get_permissions(self):
-        if self.action in ['update', 'partial_update', 'destroy']:
-            permission_classes = [IsAdmin]
-        else:
-            permission_classes = [permissions.IsAuthenticated]
-        return [permission() for permission in permission_classes]
+        if self.action in ['list', 'retrieve']:
+            return [permissions.AllowAny()]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            return [IsAdmin()]
+        return [permissions.IsAuthenticated()]
+
+
 
